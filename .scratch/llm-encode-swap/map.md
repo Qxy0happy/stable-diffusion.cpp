@@ -17,6 +17,7 @@ Implement (A) batch LLM prompt encoding that produces reusable embedding vectors
 
 - [Public API shape for encode/generate separation](issues/04-public-api-shape.md): opaque `sd_condition_t*` handle owned by lib; single context with `sd_unload_text_encoder` to drop TE; `sd_img_gen_params_t.condition` optional field for generate-from-condition; CLI two-phase in-RAM batch (no file handoff); ADetailer reuses cached cond.
 - Spec published: [spec.md](spec.md) (status: ready-for-agent). Consolidates decisions from tickets 01-04 into implementation-ready spec.
+- Implemented on `spec/llm-encode-swap`: T5 `a2626cb7`, T6 `c4a5e8b1`, T7 `c60bfba1`, T8 `f1c0bde0`, T9 `32e8b8a2`, review fixes `b71effb5`, per-prompt LoRA lifetime fix `d10669a0`; merges `88e03f60` (05-07) and `2f00a13f` (08-09). All tickets 05-10 resolved with verification in their `## Answer` sections.
 
 ## Not yet specified
 
