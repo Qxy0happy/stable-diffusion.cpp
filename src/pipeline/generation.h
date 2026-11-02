@@ -2,7 +2,7 @@
 #define __SD_PIPELINE_GENERATION_H__
 
 #include "conditioning/conditioner.hpp"
-#include "json.hpp"
+#include "request.h"
 #include "stable-diffusion.h"
 
 class StableDiffusionGGML;
@@ -72,6 +72,12 @@ namespace sd::pipeline {
                                                        int audio_length);
 
     sd::Tensor<float> ensure_image_tensor_channels(sd::Tensor<float> image, int channels);
+    std::optional<ImageGenerationEmbeds> prepare_image_generation_embeds(StableDiffusionGGML* sd,
+                                                                        const sd_img_gen_params_t* sd_img_gen_params,
+                                                                        GenerationRequest* request,
+                                                                        SamplePlan* plan,
+                                                                        ImageGenerationLatents* latents,
+                                                                        const RefImageParams& ref_image_params);
 
 }  // namespace sd::pipeline
 

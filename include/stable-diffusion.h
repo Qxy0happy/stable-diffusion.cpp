@@ -481,6 +481,7 @@ typedef struct {
     const char* ref_image_args;
 } sd_vid_gen_params_t;
 
+typedef struct sd_condition_t sd_condition_t;
 typedef struct sd_ctx_t sd_ctx_t;
 struct ggml_tensor;
 
@@ -556,6 +557,9 @@ SD_API char* sd_img_gen_params_to_str(const sd_img_gen_params_t* sd_img_gen_para
 SD_API bool generate_image(sd_ctx_t* sd_ctx,
                            const sd_img_gen_params_t* sd_img_gen_params,
                            sd_image_generation_result_t** result_out);
+// Encode a prompt into a reusable, library-owned conditioning handle.
+SD_API sd_condition_t* sd_encode_prompt(sd_ctx_t* sd_ctx, const char* prompt, const sd_img_gen_params_t* params);
+SD_API void sd_free_condition(sd_condition_t* cond);
 
 // Results own their pixels, audio and generation_info, independently of the context.
 // Generation calls require result_out and set it to NULL on failure.
