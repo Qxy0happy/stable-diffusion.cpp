@@ -292,6 +292,9 @@ struct SDGenerationParams {
     std::string prompt_with_lora;  // for metadata record only
     std::vector<sd_lora_t> lora_vec;
     std::vector<std::vector<sd_lora_t>> prompt_lora_vecs;
+    // Owns the path strings referenced by prompt_lora_vecs (sd_lora_t::path is a pointer).
+    std::vector<std::map<std::string, float>> prompt_lora_maps;
+    std::vector<std::map<std::string, float>> prompt_high_noise_lora_maps;
     sd_hires_upscaler_t resolved_hires_upscaler;
 
     // Owned execution payload.
@@ -327,9 +330,9 @@ struct SDGenerationParams {
     bool initialize_cache_params();
     bool extract_and_remove_lora(const std::string& lora_model_dir);
     static bool extract_and_remove_lora(const std::string& lora_model_dir,
-                                       std::string& prompt,
-                                       std::map<std::string, float>& lora_map,
-                                       std::map<std::string, float>& high_noise_lora_map);
+                                        std::string& prompt,
+                                        std::map<std::string, float>& lora_map,
+                                        std::map<std::string, float>& high_noise_lora_map);
     bool width_and_height_are_set() const;
     void set_width_and_height_if_unset(int w, int h);
     int get_resolved_width() const;
