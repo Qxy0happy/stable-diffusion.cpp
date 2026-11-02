@@ -911,6 +911,11 @@ int main(int argc, const char* argv[]) {
                 for (size_t i = 0; i < n_prompts; ++i) {
                     sd_img_gen_params_t ip = base;
                     ip.prompt              = gen_params.prompts[i].c_str();
+                    if (!gen_params.prompt_lora_vecs.empty() && i < gen_params.prompt_lora_vecs.size()) {
+                        const auto& pl = gen_params.prompt_lora_vecs[i];
+                        ip.loras      = pl.empty() ? nullptr : pl.data();
+                        ip.lora_count = static_cast<uint32_t>(pl.size());
+                    }
                     conds[i]               = sd_encode_prompt(sd_ctx.get(), gen_params.prompts[i].c_str(), &ip);
                     if (conds[i] == nullptr) {
                         LOG_ERROR("encode failed for prompt %zu", i);
@@ -925,6 +930,11 @@ int main(int argc, const char* argv[]) {
                     LOG_INFO("generate phase: prompt %zu/%zu", i + 1, n_prompts);
                     sd_img_gen_params_t ip = base;
                     ip.prompt             = gen_params.prompts[i].c_str();
+                    if (!gen_params.prompt_lora_vecs.empty() && i < gen_params.prompt_lora_vecs.size()) {
+                        const auto& pl = gen_params.prompt_lora_vecs[i];
+                        ip.loras      = pl.empty() ? nullptr : pl.data();
+                        ip.lora_count = static_cast<uint32_t>(pl.size());
+                    }
                     ip.condition          = conds[i];
                     sd_image_generation_result_t* generated = nullptr;
                     generate_image(sd_ctx.get(), &ip, &generated);
@@ -942,6 +952,9 @@ int main(int argc, const char* argv[]) {
                     for (size_t j = 0; j < local_results.size(); ++j) {
                         results.push_back(local_results[j]);
                         results.append_generation_info(results.size() - 1, local_results.generation_info(j), ctx_params.lora_model_dir);
+                    }
+                    for (sd_image_t& img : local_results.raw()) {
+                        img.data = nullptr;
                     }
                     local_results.clear();
                     sd_free_condition(conds[i]);

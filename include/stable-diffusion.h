@@ -518,6 +518,8 @@ SD_API bool sd_ctx_supports_video_generation(const sd_ctx_t* sd_ctx);
 // ControlNet hot-swap APIs are not safe to call while generation is in flight.
 SD_API bool sd_ctx_load_control_net(sd_ctx_t* sd_ctx, const char* path);
 SD_API bool sd_ctx_unload_control_net(sd_ctx_t* sd_ctx);
+// Unload the text-encoder weights, freeing their memory. The next encode reloads them.
+// Cached conditions are unaffected.
 SD_API void sd_unload_text_encoder(sd_ctx_t* ctx);
 SD_API bool sd_ctx_has_control_net(const sd_ctx_t* sd_ctx);
 
@@ -563,7 +565,11 @@ SD_API bool generate_image(sd_ctx_t* sd_ctx,
                            const sd_img_gen_params_t* sd_img_gen_params,
                            sd_image_generation_result_t** result_out);
 // Encode a prompt into a reusable, library-owned conditioning handle.
+// The handle is library-owned: free it with sd_free_condition(). It must be freed before
+// free_sd_ctx(). NULL-safe. Applies the params' LoRAs/circular axes. The handle bakes the
+// negative-prompt conditioning, so negative_prompt in later generate params is ignored for encoding.
 SD_API sd_condition_t* sd_encode_prompt(sd_ctx_t* sd_ctx, const char* prompt, const sd_img_gen_params_t* params);
+// Free a conditioning handle returned by sd_encode_prompt(). NULL-safe.
 SD_API void sd_free_condition(sd_condition_t* cond);
 
 // Results own their pixels, audio and generation_info, independently of the context.

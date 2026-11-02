@@ -2446,7 +2446,10 @@ bool SDGenerationParams::from_json_str(
     return true;
 }
 
-bool SDGenerationParams::extract_and_remove_lora(const std::string& lora_model_dir) {
+bool SDGenerationParams::extract_and_remove_lora(const std::string& lora_model_dir,
+                                                  std::string& prompt,
+                                                  std::map<std::string, float>& lora_map,
+                                                  std::map<std::string, float>& high_noise_lora_map) {
     if (lora_model_dir.empty()) {
         return true;
     }
@@ -2524,6 +2527,10 @@ bool SDGenerationParams::extract_and_remove_lora(const std::string& lora_model_d
     }
 
     return !missing;
+}
+
+bool SDGenerationParams::extract_and_remove_lora(const std::string& lora_model_dir) {
+    return extract_and_remove_lora(lora_model_dir, prompt, lora_map, high_noise_lora_map);
 }
 
 bool SDGenerationParams::width_and_height_are_set() const {
@@ -2688,6 +2695,34 @@ bool SDGenerationParams::resolve(const std::string& lora_model_dir, const std::s
             return false;
         }
     }
+
+    // Per-prompt LoRA extraction for batch prompt files (a tag on line i applies
+    // only to image i).
+    prompt_lora_vecs.clear();
+    prompt_lora_vecs.resize(prompts.size());
+    for (size_t i = 0; i < prompts.size(); ++i) {
+        std::map<std::string, float> per_lora_map;
+        std::map<std::string, float> per_high_noise_lora_map;
+        std::string per_prompt = prompts[i];
+        bool ok = true;
+        if (!lora_model_dir.empty()) {
+            ok = extract_and_remove_lora(lora_model_dir, per_prompt, per_lora_map, per_high_noise_lora_map);
+        }
+        if (!ok && validate_missing_loras) {
+            return false;
+        }
+        prompts[i] = per_prompt;
+        std::vector<sd_lora_t> vec;
+        vec.reserve(per_lora_map.size() + per_high_noise_lora_map.size());
+        for (const auto& kv : per_lora_map) {
+            vec.push_back({false, kv.second, kv.first.c_str()});
+        }
+        for (const auto& kv : per_high_noise_lora_map) {
+            vec.push_back({true, kv.second, kv.first.c_str()});
+        }
+        prompt_lora_vecs[i] = vec;
+    }
+
     return true;
 }
 

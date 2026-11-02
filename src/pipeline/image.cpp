@@ -152,7 +152,6 @@ namespace sd::pipeline {
                                                                                   const RefImageParams& ref_image_params) {
         int64_t prepare_start_ms = ggml_time_ms();
 
-
         sd::Tensor<float> init_image_tensor;
         sd::Tensor<float> control_image_tensor;
         sd::Tensor<float> mask_image_tensor;
@@ -493,11 +492,13 @@ namespace sd::pipeline {
                     embeds.img_uncond.c_concat = latents->img_uncond_concat_latent;
                 }
             }
+            // The handle is always encoded with empty latents, so it cannot carry a stale
+            // latent-derived concat; keeping the empty-check mirrors the baseline path.
+            sd->compute_ip_adapter_tokens(sd_img_gen_params->ip_adapter_image, sd_img_gen_params->ip_adapter_strength);
             LOG_INFO("using precomputed conditioning");
             return embeds;
         }
         ConditionerRunnerEndOnExit conditioner_runner_end{sd->cond_stage_model.get()};
-
 
         ConditionerParams condition_params;
         condition_params.text      = request->prompt;
