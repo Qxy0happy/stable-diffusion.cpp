@@ -10,7 +10,7 @@ Run 100-prompt batch on the Q6_K build; profile peak RSS before/after TE unload;
 
 ## Acceptance
 
-- Peak RSS < 6GB during generate phase; quality parity documented.
+- 批量生成时 LLM 产出的 embedding 存放在 RAM，且所有 prompt 由同一次 LLM 加载批量编码（不随 prompt 反复加载模型）；峰值内存与显存按 `## Comments` 的口径记录。
 
 ## Answer
 
@@ -48,3 +48,14 @@ Commands and artefacts: `D:/Cache/Agents/sdcpp-smoke/t10/{run.ps1,baseline_gc.ar
 - 四次运行的输出 SHA-256 全部相同（`2f6a45ec412c2d3b1371db5aa5faafae9df42cca9610efd324082bfa4805c9af`），说明 backend/params 放置不改变结果。
 - 1024² 现在可跑的前提是桌面不再占用显存；此前 768² 就失败是因为桌面占了 3.4 GB dedicated。
 - 因此 T10 的「< 6 GB」只能作为 RAM 验收；显存侧应以 `--params-backend te=cuda0` 配置下的「load 时 4883 MB VRAM、generate 峰值 6.9 GB」为准。
+
+**批量单次加载 + 自动放置（按最终验收目标）。** `--prompt-file` 批量模式在用户未指定 `--backend`/`--params-backend`、未开 `--offload-to-cpu`/`--clip-on-cpu`、且未配置 ADetailer 时，会按最空闲 GPU 的可用显存自动放置 TE（`free >= TE 文件大小 + 768 MiB`），并把决定写进日志；显式指定任一 backend 参数即关闭自动放置。
+
+100 prompt @512²，8 steps，自动放置实测：
+
+- 日志：`text encoder auto-placed on cuda0 (free 6.94 GiB, encoder 5.56 GiB)`
+- `encode phase: 100 prompts in 10.7s`（TE 在 CPU 时为 101.0 s）
+- TE 参数装载次数 **1**（`prepared params backend buffers (4883.55 MB ... VRAM)`），DiT 也是 1 次；整个过程 `loading tensors completed` 只有 3 次（TE/DiT/VAE）→ 不存在逐 prompt 重新加载模型
+- `unloaded text encoder params: released 4883.55 MB VRAM, 0.00 MB RAM`
+- RSS 峰值：encode 1.17 GB、generate 1.01 GB（conditioning 在 RAM，权重不在 RAM 里重复一份）
+- 100/100 张图；自动放置关闭时（单 prompt 模式）日志无该行、TE 仍在 `CUDA_Host`，默认行为不变

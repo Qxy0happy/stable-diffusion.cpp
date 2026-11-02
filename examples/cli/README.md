@@ -25,6 +25,14 @@ See [Direct convolution](../../docs/backend.md#direct-convolution---conv-direct-
 For direct image repair or automatic post-generation YOLOv8 detection followed by cropped inpainting, see
 [ADetailer](../../docs/adetailer.md).
 
+`--prompt-file` reads one prompt per line and runs a two-phase batch: every prompt
+is encoded up front (conditioning kept in RAM), the text encoder is unloaded, then
+all images are generated from the cached conditioning. When neither `--backend`
+nor `--params-backend` is set and the encoder fits in the freest GPU's free
+memory, the encoder is placed on that GPU for the encode phase only, and its VRAM
+is released before the diffusion model loads; pass either flag to pin the
+placement yourself.
+
 Use repeatable `--image-preprocess` rules to select resizing, cropping, padding,
 and resampling separately for each image input. Add `canny=true` to any input
 rule for edge detection. See

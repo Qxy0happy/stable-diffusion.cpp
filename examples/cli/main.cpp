@@ -3,6 +3,7 @@
 #include <time.h>
 #include <algorithm>
 #include <cctype>
+#include <chrono>
 #include <filesystem>
 #include <functional>
 #include <iostream>
@@ -12,7 +13,6 @@
 #include <sstream>
 #include <string>
 #include <vector>
-#include <chrono>
 
 // #include "preprocessing.hpp"
 #include "stable-diffusion.h"
@@ -670,6 +670,15 @@ int main(int argc, const char* argv[]) {
         return 1;
     }
 
+    // Prompt-file batches encode every prompt up front and then unload the text
+    // encoder, so the encoder can live on the GPU for the encode phase. Skip when
+    // ADetailer is configured: a region prompt that differs from the base prompt
+    // re-encodes after the unload and would fault the encoder back into VRAM
+    // next to the diffusion model.
+    if (cli_params.mode == IMG_GEN && !gen_params.prompts.empty() && gen_params.ad_model_path.empty()) {
+        ctx_params.auto_place_text_encoder = true;
+    }
+
     if (gen_params.video_frames > 4) {
         size_t last_dot_pos   = cli_params.preview_path.find_last_of(".");
         std::string base_path = cli_params.preview_path;
@@ -905,7 +914,7 @@ int main(int argc, const char* argv[]) {
         if (cli_params.mode == IMG_GEN) {
             if (!gen_params.prompts.empty()) {
                 sd_img_gen_params_t base = gen_params.to_sd_img_gen_params_t();
-                const size_t n_prompts  = gen_params.prompts.size();
+                const size_t n_prompts   = gen_params.prompts.size();
                 std::vector<sd_condition_t*> conds(n_prompts, nullptr);
                 int64_t t0 = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now().time_since_epoch()).count();
                 for (size_t i = 0; i < n_prompts; ++i) {
@@ -913,13 +922,14 @@ int main(int argc, const char* argv[]) {
                     ip.prompt              = gen_params.prompts[i].c_str();
                     if (!gen_params.prompt_lora_vecs.empty() && i < gen_params.prompt_lora_vecs.size()) {
                         const auto& pl = gen_params.prompt_lora_vecs[i];
-                        ip.loras      = pl.empty() ? nullptr : pl.data();
-                        ip.lora_count = static_cast<uint32_t>(pl.size());
+                        ip.loras       = pl.empty() ? nullptr : pl.data();
+                        ip.lora_count  = static_cast<uint32_t>(pl.size());
                     }
-                    conds[i]               = sd_encode_prompt(sd_ctx.get(), gen_params.prompts[i].c_str(), &ip);
+                    conds[i] = sd_encode_prompt(sd_ctx.get(), gen_params.prompts[i].c_str(), &ip);
                     if (conds[i] == nullptr) {
                         LOG_ERROR("encode failed for prompt %zu", i);
-                        for (auto* c : conds) sd_free_condition(c);
+                        for (auto* c : conds)
+                            sd_free_condition(c);
                         return 1;
                     }
                 }
@@ -929,24 +939,26 @@ int main(int argc, const char* argv[]) {
                 for (size_t i = 0; i < n_prompts; ++i) {
                     LOG_INFO("generate phase: prompt %zu/%zu", i + 1, n_prompts);
                     sd_img_gen_params_t ip = base;
-                    ip.prompt             = gen_params.prompts[i].c_str();
+                    ip.prompt              = gen_params.prompts[i].c_str();
                     if (!gen_params.prompt_lora_vecs.empty() && i < gen_params.prompt_lora_vecs.size()) {
                         const auto& pl = gen_params.prompt_lora_vecs[i];
-                        ip.loras      = pl.empty() ? nullptr : pl.data();
-                        ip.lora_count = static_cast<uint32_t>(pl.size());
+                        ip.loras       = pl.empty() ? nullptr : pl.data();
+                        ip.lora_count  = static_cast<uint32_t>(pl.size());
                     }
-                    ip.condition          = conds[i];
+                    ip.condition                            = conds[i];
                     sd_image_generation_result_t* generated = nullptr;
                     generate_image(sd_ctx.get(), &ip, &generated);
                     SDImageVec local_results;
                     local_results.adopt(generated, ctx_params.lora_model_dir);
                     if (!local_results) {
                         LOG_ERROR("generate failed for prompt %zu", i);
-                        for (auto* c : conds) sd_free_condition(c);
+                        for (auto* c : conds)
+                            sd_free_condition(c);
                         return 1;
                     }
                     if (!apply_adetailer(sd_ctx.get(), sd_ctx_params, ctx_params, gen_params, ip, cli_params.mode, local_results, local_results.count())) {
-                        for (auto* c : conds) sd_free_condition(c);
+                        for (auto* c : conds)
+                            sd_free_condition(c);
                         return 1;
                     }
                     for (size_t j = 0; j < local_results.size(); ++j) {

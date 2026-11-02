@@ -14,6 +14,7 @@
 #include <stdexcept>
 #include <type_traits>
 
+#include <ggml-backend.h>
 #include <json.hpp>
 
 #if defined(_WIN32)
@@ -58,6 +59,36 @@ static sd_vae_format_t str_to_vae_format(const std::string& value) {
 
 static void prepend_backend_assignment(std::string& spec, const char* assignment) {
     spec = spec.empty() ? assignment : std::string(assignment) + "," + spec;
+}
+
+// Name (lower-case, e.g. "cuda0") of the GPU device with the most free memory.
+static bool freest_gpu_device(size_t* free_bytes, std::string* device_name) {
+    size_t best_free = 0;
+    std::string best_name;
+    for (size_t i = 0; i < ggml_backend_dev_count(); ++i) {
+        ggml_backend_dev_t dev = ggml_backend_dev_get(i);
+        if (ggml_backend_dev_type(dev) != GGML_BACKEND_DEVICE_TYPE_GPU) {
+            continue;
+        }
+        size_t device_free  = 0;
+        size_t device_total = 0;
+        ggml_backend_dev_memory(dev, &device_free, &device_total);
+        if (device_free <= best_free) {
+            continue;
+        }
+        std::string name = ggml_backend_dev_name(dev);
+        std::transform(name.begin(), name.end(), name.begin(), [](unsigned char c) {
+            return static_cast<char>(std::tolower(c));
+        });
+        best_free = device_free;
+        best_name = name;
+    }
+    if (best_free == 0 || best_name.empty()) {
+        return false;
+    }
+    *free_bytes  = best_free;
+    *device_name = best_name;
+    return true;
 }
 
 #if defined(_WIN32)
@@ -948,6 +979,27 @@ void SDContextParams::prepare_backend_assignments() {
     }
     if (control_net_cpu) {
         prepend_backend_assignment(effective_backend, "controlnet=cpu");
+    }
+
+    if (auto_place_text_encoder && backend.empty() && params_backend.empty() &&
+        !offload_params_to_cpu && !clip_on_cpu && !llm_path.empty()) {
+        std::error_code ec;
+        const auto te_bytes = static_cast<size_t>(fs::file_size(fs::u8path(llm_path), ec));
+        size_t free_bytes   = 0;
+        std::string device;
+        if (!ec && te_bytes > 0 && freest_gpu_device(&free_bytes, &device)) {
+            const auto gib = [](size_t bytes) { return static_cast<double>(bytes) / (1024.0 * 1024.0 * 1024.0); };
+            if (text_encoder_fits_device(free_bytes, te_bytes)) {
+                const std::string assignment = "te=" + device;
+                prepend_backend_assignment(effective_backend, assignment.c_str());
+                prepend_backend_assignment(effective_params_backend, assignment.c_str());
+                LOG_INFO("text encoder auto-placed on %s (free %.2f GiB, encoder %.2f GiB)",
+                         device.c_str(), gib(free_bytes), gib(te_bytes));
+            } else {
+                LOG_INFO("text encoder stays on host (free %.2f GiB, encoder %.2f GiB)",
+                         gib(free_bytes), gib(te_bytes));
+            }
+        }
     }
 }
 

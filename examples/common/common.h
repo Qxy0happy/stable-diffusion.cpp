@@ -121,6 +121,15 @@ bool decode_base64_image(const std::string& encoded_input,
                          int expected_height,
                          SDImageOwner& out_image);
 
+// True when text-encoder weights of `te_bytes` fit on a device with `free_bytes`.
+// The model file size is treated as an upper bound for the allocated weights
+// (measured: a 5.56 GiB GGUF allocates 4883 MB of tensors), so only the encode
+// workspace and CUDA context need reserving.
+inline bool text_encoder_fits_device(size_t free_bytes, size_t te_bytes) {
+    constexpr size_t kReserveBytes = size_t(768) << 20;
+    return free_bytes >= te_bytes + kReserveBytes;
+}
+
 struct SDContextParams {
     int n_threads               = -1;
     int conditioning_cache_size = 4;
@@ -171,6 +180,10 @@ struct SDContextParams {
     bool auto_fit = true;
     std::string rpc_servers;
     bool list_devices = false;
+    // Batch flow only: place the text encoder on the freest GPU when its weights
+    // fit with headroom, so the encode phase runs on the device and the single
+    // unload returns that VRAM before the diffusion model loads.
+    bool auto_place_text_encoder = false;
     std::string effective_backend;
     std::string effective_params_backend;
     bool enable_mmap            = false;
