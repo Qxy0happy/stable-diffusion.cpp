@@ -1,186 +1,266 @@
-# Instructions for stable-diffusion.cpp
+# Repository Guidelines
 
-This document is for AI coding agents working in this repository. It should
-describe agent-specific workflow, repository routing, editing boundaries, and
-project-specific pitfalls.
-
-For general contribution rules, including PR scope, commit conventions, code
-style, dependency updates, security hygiene, and AI-assisted contribution policy,
-see `CONTRIBUTING.md`.
-
----
+This document is for AI coding agents working in `stable-diffusion.cpp`. It covers
+repository routing, build/test workflow, architecture, conventions, and pitfalls.
+General contribution rules (PR scope, commit style, security, AI policy) live in
+`CONTRIBUTING.md`.
 
 ## Agent Operating Rules
 
 Before analyzing or modifying the repository:
 
 1. Read this file.
-2. Use `rg` / `rg --files` or directory listing commands to confirm the current
-   tree before relying on a path.
+2. Confirm the current tree with `rg`/directory listing before relying on a path.
 3. Start from `src/` and relevant `docs/` for runtime behavior.
-4. Read the relevant code before editing.
-5. Prefer the smallest change that fits the existing architecture.
-6. Report focused verification and mention any tests not run.
+4. Read relevant code before editing.
+5. Prefer the smallest change fitting existing architecture.
+6. Run the narrowest useful build/inspection command available.
 
 Agents must not:
 
-* Run `git push`, create PRs, or submit issue/PR comments on the user's behalf.
-* Create commits unless the user explicitly requests that specific commit.
-* Modify `ggml/`, `thirdparty/`, or `examples/server/frontend/` unless
-  explicitly requested and necessary.
-* Read large local model files or tokenizer vocabulary files.
-* Rewrite unrelated code for style-only reasons.
-* Add secrets, model weights, generated binaries, local absolute paths, or
+- Run `git push`, create PRs, or submit issue/PR comments on the user's behalf.
+- Create commits unless explicitly requested.
+- Modify `ggml/`, `thirdparty/`, or `examples/server/frontend/` unless explicitly
+  requested and necessary.
+- Read large model files or tokenizer vocabulary files (`src/tokenizers/vocab/`).
+- Rewrite unrelated code for style-only reasons.
+- Add secrets, model weights, generated binaries, local absolute paths, or
   machine-specific output.
 
-When a change is large, architectural, or likely to affect public behavior,
-pause and present a short plan before editing.
+When a change is large, architectural, or likely to affect public behavior, pause
+and present a short plan before editing.
 
----
+## Project Overview
 
-## Repository Map and Editing Boundaries
+`stable-diffusion.cpp` is a C/C++17 diffusion inference library built on a
+patched `ggml` submodule. It exposes three surfaces:
 
-This is a routing map for agents, not a full architecture document. The layout
-can change, so verify paths before using them. Do not inspect excluded
-large-data directories while checking the tree.
+1. C library — `include/stable-diffusion.h` (`sd_ctx_t` opaque contexts).
+2. CLI — `examples/cli/main.cpp` → `sd-cli`.
+3. HTTP server + embedded web UI — `examples/server/main.cpp` → `sd-server`.
 
-### Primary Project Code
+Supports SD 1.x/2.x, SDXL, SD3, Flux, Flux2, Z-Image, Qwen, Wan, LTX, Hunyuan,
+and many more model families (see `src/model.h` `SDVersion`, append-only).
 
-Core implementation lives under `src/`.
+## Architecture & Data Flow
 
-Current source layout includes:
+Layering (top → bottom):
 
-* `src/core/` - shared tensor, ggml integration, backend, graph, RNG, and utility
-  code.
-* `src/model/` - model families and model components.
-* `src/model_io/` - model file loading, GGUF, safetensors, pickle, and related
-  serialization helpers.
-* `src/runtime/` - sampling, denoising, guidance, caching, preprocessing, and
-  runtime execution helpers.
-* `src/tokenizers/` - tokenizer implementations.
-* `src/conditioning/` - conditioning and prompt-related implementation.
-* `src/extensions/` - optional feature extensions.
-* top-level `src/*.cpp` and `src/*.h` files - public implementation entry
-  points, model loading, conversion, versioning, and shared managers.
-
-`src/tokenizers/vocab/` contains large tokenizer vocabulary data. Do not read or
-parse files in this directory; reference the path only when necessary.
-
-### Public API
-
-`include/` contains the C API exposed by the project. Currently the primary
-public header is `include/stable-diffusion.h`.
-
-Treat public headers as stable API. Avoid breaking compatibility unless the user
-explicitly requests it. If public behavior changes, update relevant examples or
-documentation.
-
-### Examples
-
-`examples/` contains programs demonstrating library usage.
-
-* `examples/cli/` - command line program for running models, testing features,
-  and debugging.
-* `examples/common/` - shared example support code.
-* `examples/server/` - server application built on top of the library.
-  Before modifying built-in recipes, read and follow
-  [the built-in recipe policy](examples/server/recipes/README.md).
-* `examples/server/frontend/` - git submodule containing independent frontend
-  code. Avoid modifying it unless explicitly requested.
-
-### Documentation and Tooling
-
-* `docs/` - documentation for supported models, build options, behavior, and
-  workflows.
-* `scripts/` - development, model processing, build automation, formatting, and
-  tooling scripts.
-* `cmake/` - CMake support modules.
-* `docker/` - Docker-related project files.
-* `assets/` - documentation assets; not runtime code.
-
-### External, Local, and Generated State
-
-* `ggml/` - git submodule for the ggml dependency.
-* `thirdparty/` - vendored third-party dependencies.
-* `models/` - local model storage. Ignore this directory and do not read model
-  files.
-* `test/` - local testing scripts. Use only when relevant to the task.
-* `build/`, `build_*`, and similar directories - generated build outputs.
-  Inspect them only when debugging a build result.
-
----
-
-## Agent Workflow for Code Changes
-
-1. Identify the relevant modules under `src/`.
-2. Check whether the change touches the public API in `include/`.
-3. Consult relevant `docs/` and examples before changing user-facing behavior.
-4. Follow existing local patterns before adding new abstractions.
-5. Keep edits scoped to the requested behavior.
-6. Run the narrowest useful build, test, or inspection command available.
-
-Follow `CONTRIBUTING.md` for formatting, naming, PR expectations, dependency
-update policy, and security rules. For tokenizer additions, follow its embedded-data
-allowlist and default to an external `tokenizer.json`.
-
----
-
-## Code Comments
-
-Keep comments rare and useful.
-
-Do not add comments that only describe what the code does. Add comments only
-when the code cannot fully express the logic, the logic is unusually complex, or
-there are historical reasons, invariants, constraints, compatibility concerns,
-or known pitfalls that future maintainers need to understand.
-
-Do not add task-specific comments that will be meaningless after review.
-
-Examples from the current codebase:
-
-```cpp
-// GOOD: explains a safety constraint that is not obvious from the assignment.
-// From src/model_io/pickle_io.cpp.
-// Non-tensor checkpoint metadata can use REDUCE for arbitrary
-// Python objects. Do not execute it; keep stack shape only.
-stack.push_back(make_none_value());
-
-// BAD: describes only what the next line does.
-// Set the token count to zero.
-token_count = 0;
+```
+include/stable-diffusion.h / src/stable-diffusion.cpp   C ABI
+        ↓
+src/pipeline/diffusion_engine.{h,cpp}   StableDiffusionGGML context/engine
+        ↓
+src/pipeline/{image,video,request,model_builders}.cpp   pipelines + sample plan
+        ↓
+src/conditioning + src/model/*   conditioners, diffusion runners, VAE, adapters
+src/model/adapter, src/extensions   LoRA / IP-Adapter / PuLID / PhotoMaker
+        ↓
+src/core   sd::Tensor, ggml integration, backend manager, graph runner, RNG
+        ↓
+ggml/ (submodule)   CPU/CUDA/Vulkan/Metal/… kernels
+        ↓ (loading)
+src/model_loader* → src/model_manager*   file parse, version detect, residency
 ```
 
----
+Key ownership: `StableDiffusionGGML` owns backend manager, all runners, RNGs,
+`ModelManager`, LoRA/extensions, and the denoiser. `sd_ctx_t` wraps it.
 
-## Text File Encoding
+### Context creation flow
 
-When reading or editing repository text files:
+`new_sd_ctx()` (`src/stable-diffusion.cpp`) → `StableDiffusionGGML::init()`
+(`src/pipeline/diffusion_engine.cpp`):
 
-* Prefer UTF-8 with LF for Markdown, frontend source, JSON, and other text-first
-  project files unless the file already clearly uses a different encoding.
-* Do not assume terminal output encoding matches file encoding on Windows.
-* A file that looks garbled in PowerShell output may still be valid UTF-8.
-* When inspecting UTF-8 files in PowerShell, prefer explicit UTF-8 reads such as:
-  * `[Console]::OutputEncoding = [System.Text.Encoding]::UTF8`
-  * `Get-Content -Encoding utf8 <path>`
-* Avoid rewriting a file purely because console output looked garbled; verify
-  the actual file encoding first.
+1. Validate tensor types, scales, cache size, flash-attn, direct-conv.
+2. Copy caller strings into `ModelConfig`.
+3. Init `SDBackendManager` from `--backend`/`--params-backend`/`--split-mode`.
+4. `ModelManager` + `ModelLoader` parse files, convert tensor names, detect
+   `SDVersion` via `ModelLoader::get_sd_version()`.
+5. `build_core_runners()` → `ModelDefinition::build()` creates Conditioner,
+   diffusion runner (optional high-noise), CLIP vision, IP-Adapter, audio
+   encoder.
+6. `build_vae_runners()` selects VAE / TAE / audio VAE.
+7. ControlNet, LoRA, extensions, prefetch/residency prepared.
 
----
+### Image generation flow
 
-## Tensor and Layout Notes
+`generate_image()` (`src/stable-diffusion.cpp`) → `sd::pipeline::generate_image()`
+(`src/pipeline/image.cpp`):
 
-Additional tensor/layout rules for this codebase:
+1. `GenerationRequest` resolves size, seed, strength, guidance, model list,
+   reference inputs.
+2. `ImagePreprocessor` applies preprocessing rules.
+3. Apply LoRAs + circular-axis settings.
+4. `SamplePlan` resolves sampler, scheduler, sigmas.
+5. Prepare initial latents (noise for txt2img; VAE encode for img2img) and
+   conditioning embeddings.
+6. Per-batch loop calls `StableDiffusionGGML::sample()` (denoiser, guidance,
+   caches, preview/progress callbacks).
+7. Decode latents via VAE; optional hires/upscale/ADetailer; build
+   `sdcpp.generation/v1` JSON. Results returned as owned
+   `sd_image_generation_result_t`.
 
-* `sd::Tensor` shape order is not PyTorch/NumPy-style. `shape()[0]` is the
-  lowest and most contiguous dimension, and higher indices are higher
-  dimensions.
-* Broadcasting for `sd::Tensor` must align dimensions from low to high dimension
-  indices. If one tensor has fewer dimensions, append implicit `1`s at the
-  higher-dimension end.
-* `ggml_n_dims` / `ggml_n_dims(tensor)` can drop trailing singleton high
-  dimensions. Do not assume a logical trailing dimension of `1` will still be
-  counted in ggml metadata.
-* Internal tensor-returning interfaces use an empty `sd::Tensor` to represent
-  null, absent, or failure states. Do not add `std::optional<sd::Tensor<...>>`
-  for internal APIs unless a distinct semantic state is truly required.
+Video generation follows the same shape via `src/pipeline/video.cpp` and
+`sd_vid_gen_params_t`.
+
+### Model integration flow
+
+Canonical steps (`docs/model_config.md`):
+
+1. Add `SDVersion` without renumbering existing values (`src/model.h`).
+2. Implement network + `*Config::detect_from_weights()`.
+3. Add a `ModelDefinition` in `src/model/integrations/`.
+4. Register the family explicitly in `src/model_registry.cpp`.
+
+## Key Directories
+
+- `src/core/` — `sd::Tensor`, ggml integration, backend manager, graph runner/
+  cutting, RNG, parallel executor, PE cache, probes.
+- `src/model/` — model families and components (diffusion, te, vae, adapter).
+- `src/model/integrations/` — one `ModelDefinition` per `SDVersion`.
+- `src/model_io/` — GGUF, safetensors, torch, pickle, streaming writer.
+- `src/runtime/` — schedulers/sigmas, denoisers, guidance, image preprocessing,
+  sample caches (ucache, easycache, dbcache, taylorseer, cache-dit, spectrum).
+- `src/tokenizers/` — tokenizer impls; `vocab/` is large data, do not read.
+- `src/conditioning/` — conditioning/prompt implementation.
+- `src/extensions/` — PhotoMaker, PuLID.
+- `src/pipeline/` — engine, request/plan, image & video pipelines, builders.
+- top-level `src/*.cpp/.h/.hpp` — public impl, model loading, conversion,
+  versioning, managers, detailer, upscaler.
+- `include/` — C API (`stable-diffusion.h`); treat as stable.
+- `examples/cli/` — `sd-cli`; `examples/common/` — shared example code (not a
+  library; compiled into both cli and server); `examples/server/` — `sd-server`
+  + embedded frontend.
+- `docs/` — model/build/behavior docs.
+- `cmake/` — CMake support modules.
+- `thirdparty/`, `ggml/` — vendored deps/submodules; do not modify.
+- `models/`, `build*/` — local/generated; ignore.
+
+## Development Commands
+
+Submodule init first:
+
+```bash
+git submodule update --init --recursive
+```
+
+Build (canonical, `docs/build.md`):
+
+```bash
+cmake -S . -B build            # CPU; add -DSD_CUDA=ON etc.
+cmake --build build --config Release
+```
+
+Outputs go to `${CMAKE_BINARY_DIR}/bin` (multi-config generators may use
+`bin/Release/`). Key options: `SD_CUDA`, `SD_HIPBLAS`, `SD_METAL`, `SD_VULKAN`,
+`SD_OPENCL`, `SD_SYCL`, `SD_MUSA`, `SD_WEBP`/`SD_WEBM`, `SD_BUILD_SHARED_LIBS`,
+`SD_USE_SYSTEM_GGML`, `SD_GGML_SOURCE_DIR`. See `CMakeLists.txt` for full list.
+
+Source glob: `file(GLOB … CONFIGURE_DEPENDS)` covers `src/*`, `src/conditioning`,
+`src/core{,/cpu,/probe}`, `src/extensions`, `src/model/*/*`, `src/pipeline`,
+`src/runtime`, `src/model_io`, `src/tokenizers{,/vocab}`. New `.cpp/.h/.hpp`
+under an existing globbed dir needs no CMake edit; a new top-level `src/<dir>/`
+needs the glob extended. `examples/common/` has no CMakeLists — its sources are
+listed in both `examples/cli/CMakeLists.txt` and `examples/server/CMakeLists.txt`.
+
+Frontend (when `SD_SERVER_BUILD_FRONTEND=ON`):
+
+```bash
+pnpm --ignore-workspace -C examples/server/frontend install
+pnpm --ignore-workspace -C examples/server/frontend run build:header
+```
+
+Local-only: `Taskfile.yml` is untracked (`.git/info/exclude`); do not document
+as repo-wide. CI is `.github/workflows/build.yml` (build-only matrix).
+
+Style tooling (not CI-gated):
+
+```bash
+scripts/format-code.sh   # or .ps1
+```
+
+`.clang-format`: Chromium base, 4-space, no tabs, `ColumnLimit: 0`, aligned
+consecutive assignments. `.clang-tidy`: a few `modernize-*` checks.
+
+## Code Conventions & Common Patterns
+
+- C11 + C++17 required. `CMAKE_EXPORT_COMPILE_COMMANDS=ON` →
+  `compile_commands.json` for clangd.
+- MSVC global flags: `_CRT_SECURE_NO_WARNINGS`,
+  `_SILENCE_CXX17_CODECVT_HEADER_DEPRECATION_WARNING`, `/utf-8`, `/MP` (gated).
+  Library additionally `/bigobj`, `/EHsc-` (ggml backends throw through C API).
+- Public API in `include/` is stable; avoid breaking compatibility unless asked.
+- Internal tensor-returning interfaces use an empty `sd::Tensor` for null/absent/
+  failure. Do not add `std::optional<sd::Tensor<...>>` unless a distinct semantic
+  state is truly required.
+- `sd::Tensor` shape order is NOT PyTorch/NumPy-style: `shape()[0]` is the
+  lowest/most-contiguous dimension; higher indices are higher dimensions.
+  Broadcasting aligns dimensions from low to high; append implicit `1`s at the
+  high end for fewer-dim tensors.
+- `ggml_n_dims` can drop trailing singleton high dimensions; do not assume a
+  logical trailing `1` is counted.
+- Comments rare and useful: only for non-obvious invariants, constraints,
+  compatibility, pitfalls. No task-specific or "what the code does" comments.
+- UTF-8 with LF for text files. Do not assume terminal encoding on Windows.
+- Naming/header rules per `CONTRIBUTING.md` (47–67).
+
+## Important Files
+
+- `include/stable-diffusion.h` — public C API.
+- `src/stable-diffusion.cpp` — C API impl, params init, enum↔string tables.
+- `src/model.h` — `SDVersion`, `ModelTraits`, version predicates.
+- `src/model_definition.h` / `src/model_registry.cpp` — model families.
+- `src/model_loader.{h,cpp}` — format parsing, version detection, mmap.
+- `src/model_manager.{h,cpp}` — residency, lazy load, LoRA application.
+- `src/name_conversion.{h,cpp}` — weight-name mapping.
+- `src/pipeline/diffusion_engine.{h,cpp}` — context, sampling loop.
+- `src/pipeline/{image,video,request,model_builders}.cpp` — pipelines.
+- `src/core/` — tensor/ggml/backend foundation.
+- `src/version.cpp` — version/commit from CMake compile defs.
+- `CMakeLists.txt` — build config, options, globs, version stamping.
+- `CONTRIBUTING.md` — contribution rules.
+- `docs/model_config.md` — adding a new model family.
+
+## Runtime/Tooling Preferences
+
+- CMake ≥ 3.12, C11, C++17. Prefer `cmake -S . -B build` + `cmake --build`.
+- Git submodules required (`ggml`, frontend, `thirdparty/{libwebp,libwebm,cutlass}`).
+- Frontend uses pnpm/Vite+ (Vue 3 + TS); `vp check`/`vp test` (no tests today).
+- Format with `.clang-format` via `scripts/format-code.sh|.ps1`.
+- No node-based test runner in CI; `vp test` discovers zero tests currently.
+
+## Testing & QA
+
+There is **no automated C++ test suite**: `SD_BUILD_TESTS` is commented out in
+`CMakeLists.txt`, no `enable_testing()`/`add_test()`, no CTest, no coverage
+tooling. CI (`.github/workflows/build.yml`) validates **compilation only**
+across its matrix. `CONTRIBUTING.md` forbids committing test code/scripts; keep
+them local and report verification evidence in PRs.
+
+Manual verification (document commands + key outputs in PRs):
+
+```bash
+# build
+cmake -S . -B build && cmake --build build --config Release
+
+# smoke generation (deterministic)
+./build/bin/sd-cli -m models/...safetensors -p "a lovely cat" --seed 42 --steps 8
+
+# inspect output metadata
+./build/bin/sd-cli -M metadata --image ./output.png --metadata-format json
+
+# version
+./build/bin/sd-cli --version
+
+# server
+./build/bin/sd-server --model-dir ./models   # then hit relevant endpoint
+```
+
+Determinism checks are the documented ad-hoc regression technique: fixed
+seed/settings, compare SHA-256 or byte-identical output. Backend probes use
+deterministic F32 inputs for A/B comparison (`docs/backend_probe.md`), but that
+is runtime auto-tuning, not a test suite.
+
+Do not claim CI runs tests. Do not add committed tests. If a permanent
+regression test is truly needed, confirm with the user first given
+`CONTRIBUTING.md` policy.
