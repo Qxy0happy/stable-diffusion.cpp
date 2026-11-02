@@ -15,7 +15,8 @@ Implement (A) batch LLM prompt encoding that produces reusable embedding vectors
 
 ## Decisions so far
 
-<!-- one line per closed ticket: [title](link): gist -->
+- [Public API shape for encode/generate separation](issues/04-public-api-shape.md): opaque `sd_condition_t*` handle owned by lib; single context with `sd_unload_text_encoder` to drop TE; `sd_img_gen_params_t.condition` optional field for generate-from-condition; CLI two-phase in-RAM batch (no file handoff); ADetailer reuses cached cond.
+- Spec published: [spec.md](spec.md) (status: ready-for-agent). Consolidates decisions from tickets 01-04 into implementation-ready spec.
 
 ## Not yet specified
 
@@ -31,3 +32,16 @@ Implement (A) batch LLM prompt encoding that produces reusable embedding vectors
 - New model formats / quantization schemes (reuse existing Q4_K/Q6_K).
 - GPU offload of LLM (Vulkan 780M tested, slower + unstable).
 - Changing ggml or thirdparty.
+
+## Tickets
+
+- `issues/01-conditioning-representation.md` — research (resolved)
+- `issues/02-modelmanager-te-eviction.md` — research (resolved)
+- `issues/03-sdcli-batch-prompt-flow.md` — research (resolved)
+- `issues/04-public-api-shape.md` — grilling (resolved)
+- `issues/05-add-sd-condition-handle-api.md` — task (T5)
+- `issues/06-implement-sd-unload-text-encoder.md` — task (T6)
+- `issues/07-add-condition-field-to-gen-params.md` — task (T7)
+- `issues/08-branch-generate-on-condition.md` — task (T8)
+- `issues/09-sdcli-two-phase-batch.md` — task (T9)
+- `issues/10-verify-batch-memory-and-quality.md` — task (T10)
