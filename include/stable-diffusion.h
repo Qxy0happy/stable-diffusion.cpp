@@ -413,7 +413,8 @@ typedef struct {
     float* custom_sigmas;
     int custom_sigmas_count;
 } sd_hires_params_t;
-
+ 
+typedef struct sd_condition_t sd_condition_t;
 typedef struct {
     const sd_lora_t* loras;
     uint32_t lora_count;
@@ -444,6 +445,10 @@ typedef struct {
     bool circular_x;
     bool circular_y;
     sd_image_preprocess_params_t image_preprocess;
+    // NULL = encode from `prompt` as today. When set, precomputed conditioning is used
+    // and `prompt` is ignored for encoding. Handle is caller-owned: must outlive the call
+    // and be freed with sd_free_condition() after all generations using it.
+    sd_condition_t* condition;
 } sd_img_gen_params_t;
 
 typedef struct {
@@ -481,6 +486,7 @@ typedef struct {
     const char* ref_image_args;
 } sd_vid_gen_params_t;
 
+typedef struct sd_condition_t sd_condition_t;
 typedef struct sd_ctx_t sd_ctx_t;
 struct ggml_tensor;
 
