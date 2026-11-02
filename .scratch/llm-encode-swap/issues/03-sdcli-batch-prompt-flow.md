@@ -1,7 +1,7 @@
 # How does sd-cli batch/prompt-file flow encode prompts today?
 
 Type: research
-Status: open
+Status: resolved
 
 ## Question
 

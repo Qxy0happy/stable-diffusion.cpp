@@ -1,7 +1,7 @@
 # Conditioning representation in stable-diffusion.cpp
 
 Type: research
-Status: open
+Status: resolved
 
 ## Question
 

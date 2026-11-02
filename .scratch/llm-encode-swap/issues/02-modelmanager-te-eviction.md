@@ -1,7 +1,7 @@
 # Can ModelManager evict TE params and lazily reload within a live context?
 
 Type: research
-Status: open
+Status: resolved
 
 ## Question
 
