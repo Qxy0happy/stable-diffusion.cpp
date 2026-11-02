@@ -562,6 +562,48 @@ bool StableDiffusionGGML::unload_control_net() {
     return apply_model_update(std::move(candidate), std::move(next_config), {RunnerGroup::ControlNet});
 }
 
+bool StableDiffusionGGML::unload_text_encoder() {
+    ContextOperation operation(*this);
+    if (!operation.acquired) {
+        return false;
+    }
+    if (model_manager == nullptr || config_ == nullptr) {
+        LOG_ERROR("cannot unload text encoder: context is not initialized");
+        return false;
+    }
+    if (te_params_unregistered_) {
+        LOG_INFO("text encoder params already unloaded");
+        return true;
+    }
+    end_runners();
+    size_t released_bytes = 0;
+    if (!model_manager->unregister_param_tensors(ModelComponent::Conditioner, &released_bytes)) {
+        LOG_ERROR("failed to unregister text encoder params");
+        return false;
+    }
+    te_params_unregistered_ = true;
+    LOG_INFO("unloaded text encoder params, released %zu bytes", released_bytes);
+    return true;
+}
+
+bool StableDiffusionGGML::ensure_text_encoder_registered() {
+    if (!te_params_unregistered_) {
+        return true;
+    }
+    if (model_manager == nullptr || cond_stage_model == nullptr) {
+        LOG_ERROR("cannot reload text encoder: context is not initialized");
+        return false;
+    }
+    size_t registered_bytes = 0;
+    if (!register_runner_params(ModelComponent::Conditioner, cond_stage_model, SDBackendModule::TE, &registered_bytes)) {
+        LOG_ERROR("failed to re-register text encoder params");
+        return false;
+    }
+    te_params_unregistered_ = false;
+    LOG_INFO("re-registered text encoder params, %zu bytes", registered_bytes);
+    return true;
+}
+
 bool StableDiffusionGGML::load_control_net_from_file(const std::string& path) {
     ContextOperation operation(*this);
     if (!operation.acquired) {
@@ -1866,6 +1908,9 @@ bool StableDiffusionGGML::apply_loras(const sd_lora_t* loras, uint32_t lora_coun
 }
 
 SDCondition StableDiffusionGGML::get_learned_condition(const ConditionerParams& params) {
+    if (!ensure_text_encoder_registered()) {
+        return SDCondition();
+    }
     return conditioning_cache_->get(*cond_stage_model, n_threads, params);
 }
 

@@ -468,7 +468,7 @@ namespace sd::pipeline {
         return latents;
     }
 
-    static std::optional<ImageGenerationEmbeds> prepare_image_generation_embeds(StableDiffusionGGML* sd,
+    std::optional<ImageGenerationEmbeds> prepare_image_generation_embeds(StableDiffusionGGML* sd,
                                                                                 const sd_img_gen_params_t* sd_img_gen_params,
                                                                                 GenerationRequest* request,
                                                                                 SamplePlan* plan,

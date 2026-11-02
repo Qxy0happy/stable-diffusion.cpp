@@ -11,6 +11,7 @@
 #include "pipeline/diffusion_engine.h"
 #include "pipeline/generation.h"
 #include "pipeline/request.h"
+#include "pipeline/condition_handle.h"
 
 #define NONE_STR "NONE"
 
@@ -531,6 +532,7 @@ void sd_img_gen_params_init(sd_img_gen_params_t* sd_img_gen_params) {
     sd_img_gen_params->qwen_image_layers   = 3;
     sd_img_gen_params->circular_x          = false;
     sd_img_gen_params->circular_y          = false;
+    sd_img_gen_params->condition           = nullptr;
     sd_img_gen_params->pm_params           = {nullptr, 0, nullptr, 20.f};
     sd_img_gen_params->pulid_params        = {nullptr, 1.0f};
     sd_img_gen_params->vae_tiling_params   = {false, false, 0, 0, 0.5f, 0.0f, 0.0f, nullptr};
@@ -643,35 +645,43 @@ void sd_vid_gen_params_init(sd_vid_gen_params_t* sd_vid_gen_params) {
 
 struct sd_ctx_t {
     StableDiffusionGGML* sd = nullptr;
+    std::vector<sd_condition_t*> live_conditions;
 };
 
 sd_ctx_t* new_sd_ctx(const sd_ctx_params_t* sd_ctx_params) {
-    sd_ctx_t* sd_ctx = (sd_ctx_t*)malloc(sizeof(sd_ctx_t));
+    sd_ctx_t* sd_ctx = new (std::nothrow) sd_ctx_t();
     if (sd_ctx == nullptr) {
         return nullptr;
     }
 
     sd_ctx->sd = new StableDiffusionGGML();
     if (sd_ctx->sd == nullptr) {
-        free(sd_ctx);
+        delete sd_ctx;
         return nullptr;
     }
 
     if (!sd_ctx->sd->init(sd_ctx_params)) {
         delete sd_ctx->sd;
         sd_ctx->sd = nullptr;
-        free(sd_ctx);
+        delete sd_ctx;
         return nullptr;
     }
     return sd_ctx;
 }
 
 void free_sd_ctx(sd_ctx_t* sd_ctx) {
+    if (sd_ctx == nullptr) {
+        return;
+    }
+    for (sd_condition_t* cond : sd_ctx->live_conditions) {
+        delete cond;
+    }
+    sd_ctx->live_conditions.clear();
     if (sd_ctx->sd != nullptr) {
         delete sd_ctx->sd;
         sd_ctx->sd = nullptr;
     }
-    free(sd_ctx);
+    delete sd_ctx;
 }
 
 SD_API void sd_cancel_generation(sd_ctx_t* sd_ctx, enum sd_cancel_mode_t mode) {
@@ -721,6 +731,13 @@ SD_API bool sd_ctx_unload_control_net(sd_ctx_t* sd_ctx) {
         return false;
     }
     return sd_ctx->sd->unload_control_net();
+}
+
+SD_API void sd_unload_text_encoder(sd_ctx_t* ctx) {
+    if (ctx == nullptr || ctx->sd == nullptr) {
+        return;
+    }
+    ctx->sd->unload_text_encoder();
 }
 
 SD_API bool sd_ctx_has_control_net(const sd_ctx_t* sd_ctx) {
@@ -775,6 +792,64 @@ SD_API bool generate_image(sd_ctx_t* sd_ctx,
         return false;
     }
     return sd::make_image_generation_result(images, count, infos, result_out);
+}
+
+SD_API sd_condition_t* sd_encode_prompt(sd_ctx_t* sd_ctx, const char* prompt, const sd_img_gen_params_t* params) {
+    if (sd_ctx == nullptr || sd_ctx->sd == nullptr || params == nullptr) {
+        return nullptr;
+    }
+    if (prompt == nullptr || prompt[0] == '\0') {
+        return nullptr;
+    }
+    StableDiffusionGGML::ExecutionScope execution(*sd_ctx->sd);
+    if (!execution.ready) {
+        return nullptr;
+    }
+    sd_img_gen_params_t processed = *params;
+    processed.prompt = prompt;
+    try {
+        sd_ctx->sd->reset_cancel_flag();
+        if (!sd_ctx->sd->apply_loras(processed.loras, processed.lora_count)) {
+            return nullptr;
+        }
+        sd_ctx->sd->apply_circular_axes(processed.circular_x, processed.circular_y);
+        sd_ctx->sd->vae_tiling_params = processed.vae_tiling_params;
+        sd::pipeline::GenerationRequest request(sd_ctx->sd, &processed);
+        const RefImageParams ref_image_params = sd_ctx->sd->resolve_ref_image_params(processed.ref_image_args);
+        sd::pipeline::SamplePlan plan(sd_ctx->sd, &processed, request);
+        sd::pipeline::ImageGenerationLatents latents;
+        auto embeds_opt = sd::pipeline::prepare_image_generation_embeds(sd_ctx->sd,
+                                                                         &processed,
+                                                                         &request,
+                                                                         &plan,
+                                                                         &latents,
+                                                                         ref_image_params);
+        if (!embeds_opt.has_value()) {
+            return nullptr;
+        }
+        sd_condition_t* handle = new (std::nothrow) sd_condition_t();
+        if (handle == nullptr) {
+            return nullptr;
+        }
+        handle->ctx = sd_ctx;
+        handle->embeds = std::move(*embeds_opt);
+        sd_ctx->live_conditions.push_back(handle);
+        return handle;
+    } catch (const std::exception& e) {
+        LOG_ERROR("sd_encode_prompt failed: %s", e.what());
+        return nullptr;
+    }
+}
+
+SD_API void sd_free_condition(sd_condition_t* cond) {
+    if (cond == nullptr) {
+        return;
+    }
+    if (cond->ctx != nullptr) {
+        auto& v = cond->ctx->live_conditions;
+        v.erase(std::remove(v.begin(), v.end(), cond), v.end());
+    }
+    delete cond;
 }
 
 SD_API bool generate_video(sd_ctx_t* sd_ctx,
