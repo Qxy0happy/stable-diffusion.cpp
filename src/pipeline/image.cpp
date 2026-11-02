@@ -1,4 +1,5 @@
 #include "generation.h"
+#include "condition_handle.h"
 #include "generation_info.h"
 
 #include <algorithm>
@@ -150,6 +151,7 @@ namespace sd::pipeline {
                                                                                   SamplePlan* plan,
                                                                                   const RefImageParams& ref_image_params) {
         int64_t prepare_start_ms = ggml_time_ms();
+
 
         sd::Tensor<float> init_image_tensor;
         sd::Tensor<float> control_image_tensor;
@@ -473,8 +475,29 @@ namespace sd::pipeline {
                                                                                 GenerationRequest* request,
                                                                                 SamplePlan* plan,
                                                                                 ImageGenerationLatents* latents,
-                                                                                const RefImageParams& ref_image_params) {
+                                                                                const RefImageParams& ref_image_params,
+                                                                                const ImageGenerationEmbeds* precomputed) {
+
+        if (precomputed != nullptr) {
+            ImageGenerationEmbeds embeds = *precomputed;
+            if (embeds.cond.c_concat.empty() && ref_image_params.pass_to_dit) {
+                embeds.cond.c_concat = latents->concat_latent;
+            }
+            if (request->use_uncond || request->use_high_noise_uncond) {
+                if (embeds.uncond.c_concat.empty() && ref_image_params.pass_to_dit) {
+                    embeds.uncond.c_concat = latents->concat_latent;
+                }
+            }
+            if (request->use_img_uncond) {
+                if (embeds.img_uncond.c_concat.empty() && ref_image_params.pass_to_dit) {
+                    embeds.img_uncond.c_concat = latents->img_uncond_concat_latent;
+                }
+            }
+            LOG_INFO("using precomputed conditioning");
+            return embeds;
+        }
         ConditionerRunnerEndOnExit conditioner_runner_end{sd->cond_stage_model.get()};
+
 
         ConditionerParams condition_params;
         condition_params.text      = request->prompt;
@@ -895,7 +918,8 @@ namespace sd::pipeline {
                                                           &request,
                                                           &plan,
                                                           &latents,
-                                                          ref_image_params);
+                                                          ref_image_params,
+                                                          sd_img_gen_params->condition ? &sd_img_gen_params->condition->embeds : nullptr);
         if (!embeds_opt.has_value()) {
             return false;
         }

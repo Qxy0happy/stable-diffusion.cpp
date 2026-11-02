@@ -1,6 +1,7 @@
 #include "detailer.h"
 #include "generation_info.h"
 #include "pipeline/request.h"
+#include "pipeline/condition_handle.h"
 
 #include <algorithm>
 #include <cctype>
@@ -975,6 +976,7 @@ bool adetail_image(adetailer_ctx_t* context,
         }
 
         sd_img_gen_params_t generation = resolved_inpaint;
+        generation.condition = nullptr;  // default: encode from prompt
         generation.prompt              = prompt.c_str();
         generation.negative_prompt     = negative_prompt.c_str();
         generation.init_image          = local_image;
@@ -1004,6 +1006,22 @@ bool adetail_image(adetailer_ctx_t* context,
         }
         if (params.scheduler != SCHEDULER_COUNT) {
             generation.sample_params.scheduler = params.scheduler;
+        }
+
+        if (inpaint_params->condition != nullptr) {
+            const std::string base_prompt = inpaint_params->prompt ? inpaint_params->prompt : std::string();
+            // Reuse cached conditioning only when the per-region prompt is unchanged
+            // (params.prompt template empty) and dimensions are safe for size-dependent
+            // conditioners (SDXL/ADM-vector); size-independent conditioners ignore dims.
+            bool prompt_unchanged = (prompt == base_prompt);
+            bool size_ok = true;
+            if (inpaint_params->condition->size_dependent) {
+                size_ok = (inpaint_params->condition->width == params.inpaint_width &&
+                           inpaint_params->condition->height == params.inpaint_height);
+            }
+            if (prompt_unchanged && size_ok) {
+                generation.condition = inpaint_params->condition;
+            }
         }
 
         sd_image_generation_result_t* generated = nullptr;
