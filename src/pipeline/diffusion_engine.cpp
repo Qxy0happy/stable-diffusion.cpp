@@ -575,14 +575,17 @@ bool StableDiffusionGGML::unload_text_encoder() {
         LOG_INFO("text encoder params already unloaded");
         return true;
     }
+    const ResidencyBytes before = model_manager->resident_param_bytes();
     end_runners();
-    size_t released_bytes = 0;
-    if (!model_manager->unregister_param_tensors(ModelComponent::Conditioner, &released_bytes)) {
+    if (!model_manager->unregister_param_tensors(ModelComponent::Conditioner)) {
         LOG_ERROR("failed to unregister text encoder params");
         return false;
     }
-    te_params_unregistered_ = true;
-    LOG_INFO("unloaded text encoder params, released %zu bytes", released_bytes);
+    te_params_unregistered_    = true;
+    const ResidencyBytes after = model_manager->resident_param_bytes();
+    LOG_INFO("unloaded text encoder params: released %.2f MB VRAM, %.2f MB RAM",
+             (before.device_bytes - after.device_bytes) / (1024.f * 1024.f),
+             (before.host_bytes - after.host_bytes) / (1024.f * 1024.f));
     return true;
 }
 

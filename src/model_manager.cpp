@@ -1313,6 +1313,32 @@ void ModelManager::erase_params_storage_block(ParamsStorageBlock* block) {
     }
 }
 
+ResidencyBytes ModelManager::resident_param_bytes() const {
+    ResidencyBytes bytes;
+    auto accumulate = [&bytes](ggml_backend_buffer_t buffer) {
+        if (buffer == nullptr) {
+            return;
+        }
+        size_t size = ggml_backend_buffer_get_size(buffer);
+        if (ggml_backend_buft_is_host(ggml_backend_buffer_get_type(buffer))) {
+            bytes.host_bytes += size;
+        } else {
+            bytes.device_bytes += size;
+        }
+    };
+    for (const auto& block : params_storage_blocks_) {
+        if (block != nullptr) {
+            accumulate(block->buffer);
+        }
+    }
+    for (const auto& block : compute_staging_blocks_) {
+        if (block != nullptr) {
+            accumulate(block->buffer);
+        }
+    }
+    return bytes;
+}
+
 void ModelManager::release_all() {
     clear_all_prefetched_params();
     runtime_residencies_.clear();

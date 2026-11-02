@@ -14,6 +14,11 @@
 #include "model_component.h"
 #include "model_loader.h"
 
+struct ResidencyBytes {
+    size_t host_bytes   = 0;
+    size_t device_bytes = 0;
+};
+
 class ModelManager : public DeviceResidencyManager {
 public:
     enum class ResidencyMode {
@@ -188,6 +193,11 @@ public:
     bool refresh_files();
     ModelLoader::FileVersions source_versions(const std::set<ModelComponent>& components, const ModelLoader& loader) const;
     size_t registered_params_size(const std::set<ModelComponent>& components) const;
+
+    // Currently resident params/staging bytes, split into host (RAM, including
+    // pinned CUDA host buffers) and device (VRAM) so callers can report what an
+    // unload actually returned to the driver.
+    ResidencyBytes resident_param_bytes() const;
 
     void prepare_file_io() { model_loader_.process_model_files(enable_mmap_, writable_mmap_); }
     bool load_float_tensor(const std::string& name, std::vector<float>& data) {
