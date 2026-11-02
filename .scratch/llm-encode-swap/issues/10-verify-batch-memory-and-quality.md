@@ -32,13 +32,19 @@ Commands and artefacts: `D:/Cache/Agents/sdcpp-smoke/t10/{run.ps1,baseline_gc.ar
 
 ## Comments
 
-**显存口径更正（`--backend te=cuda0` 实测）。** 上面的数字全部是 RSS。显存侧用 GPU Adapter Memory 计数器（dedicated / shared 分开）重测 1-prompt 批处理，桌面基线 dedicated 3461 MiB / shared 201 MiB：
+**显存口径更正 + 空卡实测（1024²，MOSS-Image-SFT Q6K + Qwen3.5-9B TE）。** 上面的数字全部是 RSS。显存用 GPU Adapter Memory 计数器的 dedicated / shared 分开采样；桌面 GPU 占用清空后（dedicated 基线 ~390 MiB，可用 ~7.9 GB）：
 
-| 阶段 | 显存峰值（dedicated 增量） | shared 增量 |
-| --- | --- | --- |
-| encode（TE 在 `cuda0`） | +3685 MiB | +5002 MiB |
-| generate（DiT） | +4290 MiB | +4649 MiB |
+| 配置 | TE 参数位置 | DiT 参数位置 | encode 峰值 dedicated | generate 峰值 dedicated | peak shared | 单图耗时 |
+| --- | --- | --- | --- | --- | --- | --- |
+| 单阶段，默认 params | CUDA_Host | CUDA_Host | — | +5444 MiB | +9246 MiB | 44 s |
+| 两阶段，默认 params | CUDA_Host（unload 释放 4883 MB RAM） | CUDA_Host | +4018 MiB | +5482 MiB | +4961 → +4346 MiB | 43 s |
+| 两阶段，`--params-backend *=cuda0` | VRAM 4883 MB（unload 释放 4883 MB VRAM） | VRAM 4258 MB | +4973 MiB | +6941 MiB | +99 MiB | 42 s |
+| 单阶段，`--params-backend *=cuda0` | VRAM 4883 MB（常驻） | 未进 VRAM，退化为分段 staging | — | +7053 MiB | +294 MiB | 49 s |
 
-结论：`nvidia-smi memory.used` 在 WDDM 上等于 dedicated + shared，之前把 +4202 MiB 全算作显存是错的。TE 的 4883 MB 参数落在 `CUDA_Host`（pinned host → shared），unload 释放的是这部分 RAM；dedicated VRAM 里的分段 staging 由 encode 结束时的 `runner_end` 释放，不经过 unload。`sd_unload_text_encoder` 现在会打印 `released X MB VRAM, Y MB RAM`，在该配置下实测为 `0.00 MB VRAM, 4883.55 MB RAM`。
+结论：
 
-dedicated 峰值之所以停在 4.3 GB 以内，是 `--max-vram 4`（自动图切分）在起作用；它在本改动之前就存在。因此本 ticket 的「< 6 GB」只能作为 RAM 验收，显存结论必须按上表重述。
+- 显存释放是真实且可复现的，但**前提是 TE 参数在 device buffer**（`--params-backend te=cuda0`）：日志实测 `released 4883.55 MB VRAM, 0.00 MB RAM`。默认 params 走 `CUDA_Host` 时同一行是 `0.00 MB VRAM, 4883.55 MB RAM`，`nvidia-smi memory.used` 的下降来自 pinned host（WDDM 把 shared 计入），不是显存。
+- 顺序驻留的收益不是「峰值更低」，而是**DiT 参数得以整体驻留 VRAM**：TE 4883 + DiT 4258 = 9141 MB 超过 8188 MB 卡容量，单阶段时管理器无法让 DiT 进 VRAM（日志里没有 4258 MB 的 VRAM 装载），只能逐段 staging；两阶段卸载后 DiT 完整常驻。对应 1024² 单图 49 s → 42 s，encode 3.4 s → 1.9 s。
+- 四次运行的输出 SHA-256 全部相同（`2f6a45ec412c2d3b1371db5aa5faafae9df42cca9610efd324082bfa4805c9af`），说明 backend/params 放置不改变结果。
+- 1024² 现在可跑的前提是桌面不再占用显存；此前 768² 就失败是因为桌面占了 3.4 GB dedicated。
+- 因此 T10 的「< 6 GB」只能作为 RAM 验收；显存侧应以 `--params-backend te=cuda0` 配置下的「load 时 4883 MB VRAM、generate 峰值 6.9 GB」为准。
