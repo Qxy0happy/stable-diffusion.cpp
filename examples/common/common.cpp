@@ -1715,13 +1715,38 @@ ArgOptions SDGenerationParams::get_options() {
         }
         const std::string arg = argv_to_utf8(index, argv);
         std::ifstream f(fs::u8path(arg), std::ios::binary);
+        std::string content;
         try {
-            prompt = std::string(std::istreambuf_iterator<char>{f}, {});
+            content = std::string(std::istreambuf_iterator<char>{f}, {});
         } catch (const std::ios_base::failure&) {
             f.setstate(std::ios_base::failbit);
         }
-        if (f.fail()) {
+        if (f.fail() && !f.eof()) {
             LOG_ERROR("error: failed to read prompt file '%s'\n", arg.c_str());
+            return -1;
+        }
+        prompts.clear();
+        prompt.clear();
+        std::string line;
+        std::istringstream iss(content);
+        while (std::getline(iss, line)) {
+            if (!line.empty() && line.back() == '\r') {
+                line.pop_back();
+            }
+            bool blank = true;
+            for (char c : line) {
+                if (!std::isspace(static_cast<unsigned char>(c))) {
+                    blank = false;
+                    break;
+                }
+            }
+            if (blank) {
+                continue;
+            }
+            prompts.push_back(line);
+        }
+        if (prompts.empty()) {
+            LOG_ERROR("error: prompt file '%s' contains no prompts\n", arg.c_str());
             return -1;
         }
         return 1;
@@ -1837,7 +1862,7 @@ ArgOptions SDGenerationParams::get_options() {
          on_relative_tile_size_arg},
         {"",
          "--prompt-file",
-         "path to the file containing the prompt to render",
+         "path to a file with one prompt per line (blank lines skipped); batch-encodes all prompts",
          on_prompt_file_arg},
         {"",
          "--negative-prompt-file",

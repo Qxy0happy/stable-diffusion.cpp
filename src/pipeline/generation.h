@@ -77,7 +77,8 @@ namespace sd::pipeline {
                                                                         GenerationRequest* request,
                                                                         SamplePlan* plan,
                                                                         ImageGenerationLatents* latents,
-                                                                        const RefImageParams& ref_image_params);
+                                                                        const RefImageParams& ref_image_params,
+                                                                        const ImageGenerationEmbeds* precomputed = nullptr);
 
 }  // namespace sd::pipeline
 

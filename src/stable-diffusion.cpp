@@ -12,6 +12,7 @@
 #include "pipeline/generation.h"
 #include "pipeline/request.h"
 #include "pipeline/condition_handle.h"
+#include "model.h"
 
 #define NONE_STR "NONE"
 
@@ -832,6 +833,9 @@ SD_API sd_condition_t* sd_encode_prompt(sd_ctx_t* sd_ctx, const char* prompt, co
             return nullptr;
         }
         handle->ctx = sd_ctx;
+        handle->width = request.width;
+        handle->height = request.height;
+        handle->size_dependent = sd_version_is_sdxl(sd_ctx->sd->version);
         handle->embeds = std::move(*embeds_opt);
         sd_ctx->live_conditions.push_back(handle);
         return handle;
