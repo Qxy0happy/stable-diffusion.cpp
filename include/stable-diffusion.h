@@ -513,6 +513,7 @@ SD_API bool sd_ctx_supports_video_generation(const sd_ctx_t* sd_ctx);
 // ControlNet hot-swap APIs are not safe to call while generation is in flight.
 SD_API bool sd_ctx_load_control_net(sd_ctx_t* sd_ctx, const char* path);
 SD_API bool sd_ctx_unload_control_net(sd_ctx_t* sd_ctx);
+SD_API void sd_unload_text_encoder(sd_ctx_t* ctx);
 SD_API bool sd_ctx_has_control_net(const sd_ctx_t* sd_ctx);
 
 SD_API const char* sd_type_name(enum sd_type_t type);

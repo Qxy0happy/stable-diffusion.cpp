@@ -723,6 +723,13 @@ SD_API bool sd_ctx_unload_control_net(sd_ctx_t* sd_ctx) {
     return sd_ctx->sd->unload_control_net();
 }
 
+SD_API void sd_unload_text_encoder(sd_ctx_t* ctx) {
+    if (ctx == nullptr || ctx->sd == nullptr) {
+        return;
+    }
+    ctx->sd->unload_text_encoder();
+}
+
 SD_API bool sd_ctx_has_control_net(const sd_ctx_t* sd_ctx) {
     if (sd_ctx == nullptr || sd_ctx->sd == nullptr) {
         return false;

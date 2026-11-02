@@ -199,6 +199,7 @@ public:
     std::unique_ptr<ConditioningCache> conditioning_cache_;
     std::vector<ModelManager::LoraSpec> conditioning_loras_;
     bool executing_ = false;
+    bool te_params_unregistered_ = false;
 
     std::shared_ptr<Denoiser> denoiser;
     std::vector<float> file_alphas_cumprod;
@@ -312,6 +313,9 @@ public:
                                             size_t* params_mem_size);
 
     bool unload_control_net();
+
+    bool unload_text_encoder();
+    bool ensure_text_encoder_registered();
 
     bool load_control_net_from_file(const std::string& path);
 
