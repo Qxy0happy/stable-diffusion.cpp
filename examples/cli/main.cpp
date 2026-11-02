@@ -12,6 +12,7 @@
 #include <sstream>
 #include <string>
 #include <vector>
+#include <chrono>
 
 // #include "preprocessing.hpp"
 #include "stable-diffusion.h"
@@ -902,10 +903,57 @@ int main(int argc, const char* argv[]) {
         }
 
         if (cli_params.mode == IMG_GEN) {
-            sd_image_generation_result_t* generated = nullptr;
-            generate_image(sd_ctx.get(), &img_gen_params, &generated);
-            results.adopt(generated, ctx_params.lora_model_dir);
-            num_results = results.count();
+            if (!gen_params.prompts.empty()) {
+                sd_img_gen_params_t base = gen_params.to_sd_img_gen_params_t();
+                const size_t n_prompts  = gen_params.prompts.size();
+                std::vector<sd_condition_t*> conds(n_prompts, nullptr);
+                int64_t t0 = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now().time_since_epoch()).count();
+                for (size_t i = 0; i < n_prompts; ++i) {
+                    sd_img_gen_params_t ip = base;
+                    ip.prompt              = gen_params.prompts[i].c_str();
+                    conds[i]               = sd_encode_prompt(sd_ctx.get(), gen_params.prompts[i].c_str(), &ip);
+                    if (conds[i] == nullptr) {
+                        LOG_ERROR("encode failed for prompt %zu", i);
+                        for (auto* c : conds) sd_free_condition(c);
+                        return 1;
+                    }
+                }
+                LOG_INFO("encode phase: %zu prompts in %.1fs", n_prompts, (std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now().time_since_epoch()).count() - t0) / 1000.0);
+                sd_unload_text_encoder(sd_ctx.get());
+                LOG_INFO("text encoder unloaded");
+                for (size_t i = 0; i < n_prompts; ++i) {
+                    LOG_INFO("generate phase: prompt %zu/%zu", i + 1, n_prompts);
+                    sd_img_gen_params_t ip = base;
+                    ip.prompt             = gen_params.prompts[i].c_str();
+                    ip.condition          = conds[i];
+                    sd_image_generation_result_t* generated = nullptr;
+                    generate_image(sd_ctx.get(), &ip, &generated);
+                    SDImageVec local_results;
+                    local_results.adopt(generated, ctx_params.lora_model_dir);
+                    if (!local_results) {
+                        LOG_ERROR("generate failed for prompt %zu", i);
+                        for (auto* c : conds) sd_free_condition(c);
+                        return 1;
+                    }
+                    if (!apply_adetailer(sd_ctx.get(), sd_ctx_params, ctx_params, gen_params, ip, cli_params.mode, local_results, local_results.count())) {
+                        for (auto* c : conds) sd_free_condition(c);
+                        return 1;
+                    }
+                    for (size_t j = 0; j < local_results.size(); ++j) {
+                        results.push_back(local_results[j]);
+                        results.append_generation_info(results.size() - 1, local_results.generation_info(j), ctx_params.lora_model_dir);
+                    }
+                    local_results.clear();
+                    sd_free_condition(conds[i]);
+                    conds[i] = nullptr;
+                }
+                num_results = results.count();
+            } else {
+                sd_image_generation_result_t* generated = nullptr;
+                generate_image(sd_ctx.get(), &img_gen_params, &generated);
+                results.adopt(generated, ctx_params.lora_model_dir);
+                num_results = results.count();
+            }
         } else if (cli_params.mode == ADETAILER) {
             num_results = 1;
             results.push_back(gen_params.init_image.release());
@@ -927,7 +975,7 @@ int main(int argc, const char* argv[]) {
             return 1;
         }
 
-        if (use_img_gen_params &&
+        if (use_img_gen_params && gen_params.prompts.empty() &&
             !apply_adetailer(sd_ctx.get(),
                              sd_ctx_params,
                              ctx_params,

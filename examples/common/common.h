@@ -206,6 +206,7 @@ struct SDContextParams {
 struct SDGenerationParams {
     // User-facing input fields.
     std::string prompt;
+    std::vector<std::string> prompts;  // batch prompts (one per line from --prompt-file)
     std::string negative_prompt;
     std::string ad_model_path;
     std::string ad_prompt;
